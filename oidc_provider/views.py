@@ -11,8 +11,14 @@ from django.contrib.auth.views import (
     redirect_to_login,
     logout,
 )
+
+import django
+if django.VERSION >= (1, 11):
+    from django.urls import reverse
+else:
+    from django.core.urlresolvers import reverse
+
 from django.contrib.auth import logout as django_user_logout
-from django.core.urlresolvers import reverse
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
@@ -72,12 +78,14 @@ class AuthorizeView(View):
                         raise AuthorizeError(authorize.params['redirect_uri'], 'login_required', authorize.grant_type)
                     else:
                         django_user_logout(request)
-                        return redirect_to_login(request.get_full_path(), settings.get('OIDC_LOGIN_URL'))
+                        next_page = self.strip_prompt_login(request.get_full_path())
+                        return redirect_to_login(next_page, settings.get('OIDC_LOGIN_URL'))
 
                 if 'select_account' in authorize.params['prompt']:
                     # TODO: see how we can support multiple accounts for the end-user.
                     if 'none' in authorize.params['prompt']:
-                        raise AuthorizeError(authorize.params['redirect_uri'], 'account_selection_required', authorize.grant_type)
+                        raise AuthorizeError(
+                            authorize.params['redirect_uri'], 'account_selection_required', authorize.grant_type)
                     else:
                         django_user_logout(request)
                         return redirect_to_login(request.get_full_path(), settings.get('OIDC_LOGIN_URL'))
@@ -85,14 +93,22 @@ class AuthorizeView(View):
                 if {'none', 'consent'}.issubset(authorize.params['prompt']):
                     raise AuthorizeError(authorize.params['redirect_uri'], 'consent_required', authorize.grant_type)
 
-                if 'consent' not in authorize.params['prompt']:
-                    if not authorize.client.require_consent and not (authorize.client.client_type == 'public'):
-                        return redirect(authorize.create_response_uri())
+                implicit_flow_resp_types = {'id_token', 'id_token token'}
+                allow_skipping_consent = (
+                    authorize.client.client_type != 'public' or
+                    authorize.client.response_type in implicit_flow_resp_types)
 
-                    if authorize.client.reuse_consent:
-                        # Check if user previously give consent.
-                        if authorize.client_has_user_consent() and not (authorize.client.client_type == 'public'):
-                            return redirect(authorize.create_response_uri())
+                if not authorize.client.require_consent and (
+                        allow_skipping_consent and
+                        'consent' not in authorize.params['prompt']):
+                    return redirect(authorize.create_response_uri())
+
+                if authorize.client.reuse_consent:
+                    # Check if user previously give consent.
+                    if authorize.client_has_user_consent() and (
+                            allow_skipping_consent and
+                            'consent' not in authorize.params['prompt']):
+                        return redirect(authorize.create_response_uri())
 
                 if 'none' in authorize.params['prompt']:
                     raise AuthorizeError(authorize.params['redirect_uri'], 'consent_required', authorize.grant_type)
@@ -119,6 +135,9 @@ class AuthorizeView(View):
             else:
                 if 'none' in authorize.params['prompt']:
                     raise AuthorizeError(authorize.params['redirect_uri'], 'login_required', authorize.grant_type)
+                if 'login' in authorize.params['prompt']:
+                    next_page = self.strip_prompt_login(request.get_full_path())
+                    return redirect_to_login(next_page, settings.get('OIDC_LOGIN_URL'))
 
                 return redirect_to_login(request.get_full_path(), settings.get('OIDC_LOGIN_URL'))
 
@@ -144,13 +163,15 @@ class AuthorizeView(View):
             authorize.validate_params()
 
             if not request.POST.get('allow'):
-                signals.user_decline_consent.send(self.__class__, user=request.user, client=authorize.client, scope=authorize.params['scope'])
+                signals.user_decline_consent.send(
+                    self.__class__, user=request.user, client=authorize.client, scope=authorize.params['scope'])
 
                 raise AuthorizeError(authorize.params['redirect_uri'],
                                      'access_denied',
                                      authorize.grant_type)
 
-            signals.user_accept_consent.send(self.__class__, user=request.user, client=authorize.client, scope=authorize.params['scope'])
+            signals.user_accept_consent.send(
+                self.__class__, user=request.user, client=authorize.client, scope=authorize.params['scope'])
 
             # Save the user consent given to the client.
             authorize.set_client_user_consent()
@@ -159,12 +180,26 @@ class AuthorizeView(View):
 
             return redirect(uri)
 
-        except (AuthorizeError) as error:
+        except AuthorizeError as error:
             uri = error.create_uri(
                 authorize.params['redirect_uri'],
                 authorize.params['state'])
 
             return redirect(uri)
+
+    @staticmethod
+    def strip_prompt_login(path):
+        """
+        Strips 'login' from the 'prompt' query parameter.
+        """
+        uri = urlsplit(path)
+        query_params = parse_qs(uri.query)
+        if 'login' in query_params['prompt']:
+            query_params['prompt'].remove('login')
+        if not query_params['prompt']:
+            del query_params['prompt']
+        uri = uri._replace(query=urlencode(query_params, doseq=True))
+        return urlunsplit(uri)
 
 
 class TokenView(View):

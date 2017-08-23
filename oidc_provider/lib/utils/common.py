@@ -1,27 +1,15 @@
 from hashlib import sha224
 
-from django.core.urlresolvers import reverse
+import django
+
+if django.VERSION >= (1, 11):
+    from django.urls import reverse
+else:
+    from django.core.urlresolvers import reverse
+
 from django.http import HttpResponse
 
 from oidc_provider import settings
-
-try:
-    from urlparse import urlsplit, urlunsplit
-except ImportError:
-    from urllib.parse import urlsplit, urlunsplit
-
-
-def cleanup_url_from_query_string(uri):
-    """
-    Function used to clean up the uri from any query string, used i.e. by endpoints to validate redirect_uri
-
-    :param uri: URI to clean from query string
-    :type uri: str
-    :return: cleaned URI without query string
-    """
-    clean_uri = urlsplit(uri)
-    clean_uri = urlunsplit(clean_uri._replace(query=''))
-    return clean_uri
 
 
 def redirect(uri):
@@ -88,7 +76,8 @@ def default_after_userlogin_hook(request, user, client):
     return None
 
 
-def default_after_end_session_hook(request, id_token=None, post_logout_redirect_uri=None, state=None, client=None, next_page=None):
+def default_after_end_session_hook(
+        request, id_token=None, post_logout_redirect_uri=None, state=None, client=None, next_page=None):
     """
     Default function for setting OIDC_AFTER_END_SESSION_HOOK.
 
@@ -104,7 +93,8 @@ def default_after_end_session_hook(request, id_token=None, post_logout_redirect_
     :param state: state param from url query params
     :type state: str
 
-    :param client: If id_token has `aud` param and associated Client exists, this is an instance of it - do NOT trust this param
+    :param client: If id_token has `aud` param and associated Client exists,
+        this is an instance of it - do NOT trust this param
     :type client: oidc_provider.models.Client
 
     :param next_page: calculated next_page redirection target

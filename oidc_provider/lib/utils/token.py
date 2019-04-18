@@ -9,7 +9,8 @@ from jwkest.jwk import SYMKey
 from jwkest.jws import JWS
 from jwkest.jwt import JWT
 
-from oidc_provider.lib.utils.common import get_issuer
+from oidc_provider.lib.utils.common import get_issuer, run_processing_hook
+from oidc_provider.lib.claims import StandardScopeClaims
 from oidc_provider.models import (
     Code,
     RSAKey,
@@ -18,7 +19,7 @@ from oidc_provider.models import (
 from oidc_provider import settings
 
 
-def create_id_token(user, aud, nonce='', at_hash='', request=None, scope=None):
+def create_id_token(token, user, aud, nonce='', at_hash='', request=None, scope=None):
     """
     Creates the id_token dictionary.
     See: http://openid.net/specs/openid-connect-core-1_0.html#IDToken
@@ -52,16 +53,17 @@ def create_id_token(user, aud, nonce='', at_hash='', request=None, scope=None):
     if at_hash:
         dic['at_hash'] = at_hash
 
-    if ('email' in scope) and getattr(user, 'email', None):
-        dic['email'] = user.email
+    # Inlude (or not) user standard claims in the id_token.
+    if settings.get('OIDC_IDTOKEN_INCLUDE_CLAIMS'):
+        standard_claims = StandardScopeClaims(token)
+        dic.update(standard_claims.create_response_dic())
+        if settings.get('OIDC_EXTRA_SCOPE_CLAIMS'):
+            custom_claims = settings.get('OIDC_EXTRA_SCOPE_CLAIMS', import_str=True)(token)
+            dic.update(custom_claims.create_response_dic())
 
-    processing_hook = settings.get('OIDC_IDTOKEN_PROCESSING_HOOK')
-
-    if isinstance(processing_hook, (list, tuple)):
-        for hook in processing_hook:
-            dic = settings.import_from_str(hook)(dic, user=user)
-    else:
-        dic = settings.import_from_str(processing_hook)(dic, user=user)
+    dic = run_processing_hook(
+        dic, 'OIDC_IDTOKEN_PROCESSING_HOOK',
+        user=user, token=token, request=request)
 
     return dic
 
@@ -91,7 +93,12 @@ def client_id_from_id_token(id_token):
     Returns a string or None.
     """
     payload = JWT().unpack(id_token).payload()
-    return payload.get('aud', None)
+    aud = payload.get('aud', None)
+    if aud is None:
+        return None
+    if isinstance(aud, list):
+        return aud[0]
+    return aud
 
 
 def create_token(user, client, scope, id_token_dic=None):

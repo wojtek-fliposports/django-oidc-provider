@@ -1,3 +1,4 @@
+from base64 import b64decode
 import logging
 import re
 
@@ -20,12 +21,36 @@ def extract_access_token(request):
     """
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
 
-    if re.compile('^Bearer\s{1}.+$').match(auth_header):
+    if re.compile(r'^[Bb]earer\s{1}.+$').match(auth_header):
         access_token = auth_header.split()[1]
     else:
         access_token = request.GET.get('access_token', '')
 
     return access_token
+
+
+def extract_client_auth(request):
+    """
+    Get client credentials using HTTP Basic Authentication method.
+    Or try getting parameters via POST.
+    See: http://tools.ietf.org/html/rfc6750#section-2.1
+
+    Return a tuple `(client_id, client_secret)`.
+    """
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+
+    if re.compile(r'^Basic\s{1}.+$').match(auth_header):
+        b64_user_pass = auth_header.split()[1]
+        try:
+            user_pass = b64decode(b64_user_pass).decode('utf-8').split(':')
+            client_id, client_secret = tuple(user_pass)
+        except Exception:
+            client_id = client_secret = ''
+    else:
+        client_id = request.POST.get('client_id', '')
+        client_secret = request.POST.get('client_secret', '')
+
+    return (client_id, client_secret)
 
 
 def protected_resource_view(scopes=None):

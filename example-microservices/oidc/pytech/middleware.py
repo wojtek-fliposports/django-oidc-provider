@@ -10,7 +10,6 @@ def get_id_token(request):
     client = OidcClient.objects.all().first()
     if client is None:
         return 'No client'
-
     id_token_dic = create_id_token(
         token=None,
         user=request.user,

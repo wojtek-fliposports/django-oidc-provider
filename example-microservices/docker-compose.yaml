@@ -1,0 +1,18 @@
+version: '3'
+services:
+  oidc:
+    build: oidc/.
+    volumes:
+      - ./oidc:/code
+    ports:
+      - "8080:8080"
+
+  wallet:
+    build: wallet/.
+    volumes:
+      - ./wallet:/code
+    ports:
+      - "8000:8000"
+    depends_on:
+      - oidc
+

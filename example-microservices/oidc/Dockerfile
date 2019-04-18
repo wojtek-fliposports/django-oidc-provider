@@ -18,3 +18,6 @@ COPY . /code/
 VOLUME /code
 CMD ./start.sh
 
+EXPOSE 8080
+
+

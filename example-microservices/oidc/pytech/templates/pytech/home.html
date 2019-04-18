@@ -1,0 +1,26 @@
+{% extends "pytech/base.html" %}
+{% load i18n staticfiles %}
+
+{% block content %}
+
+<section>
+    <div class="container">
+        <h1 class="jumbotron-heading">PyTech, Witam {% if user.is_authenticated %} {{ user.username }}{% endif %}!</h1>
+        <p class="lead text-muted">
+            OpenID Connect - znaczące ułatwienie w wydajności mikroserwisów i architekturze rozproszonej.
+        </p>
+        <hr>
+        <h3>IdToken Permissions</h3>
+        <pre>{% for item in user.get_id_token_permissions %}
+            {{ item.name }}{% endfor %}
+        </pre>
+        <hr>
+        <h3>IdToken</h3>
+        <pre>{{ user.get_id_token }}</pre>
+        <hr>
+        <h3>IdToken - extracted perms</h3>
+        <pre>{{ user.get_permissions_from_id_token }}</pre>
+    </div>
+</section>
+
+{% endblock %}

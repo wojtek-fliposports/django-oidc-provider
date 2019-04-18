@@ -2,7 +2,7 @@ from django.apps import AppConfig
 from django.db.models.signals import post_save
 from django.contrib.auth import get_user_model
 
-from signals import missing_user_signal
+from project.signals import missing_user_signal
 
 
 class WalletConfig(AppConfig):
